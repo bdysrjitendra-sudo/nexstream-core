@@ -1,52 +1,55 @@
 import os
-import random
 import yt_dlp
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Isse hamari website bina kisi error ke backend se baat kar payegi
-
-# 1. Free Proxy Pool (Yahan hum kuch working free public proxies ki list rakhte hain)
-# Future me tool down na ho, isiliye har request par inme se ek random IP choose hogi
-PROXY_POOL = [
-    "http://45.77.55.122:8080",
-    "http://198.211.121.34:3128",
-    "http://167.172.184.23:80",
-    "http://206.189.231.11:8080"
-]
+CORS(app)
 
 @app.route('/extract', methods=['POST'])
 def extract_video():
     data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "Invalid JSON data!"}), 400
+        
     url = data.get('url')
-    
     if not url:
         return jsonify({"success": False, "error": "URL missing hai!"}), 400
 
-    # Ek random proxy select karna taaki Instagram block na kare
-    selected_proxy = random.choice(PROXY_POOL)
-
-    # 2. yt-dlp ki advanced settings (Bina video download kiye sirf link nikalne ke liye)
+    # Advanced Cloud-Optimized Settings (No heavy extraction)
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',  # Sabse achhi quality
-        'quiet': True,                         # Faltu logs band karne ke liye
+        'format': 'best',
+        'quiet': True,
         'no_warnings': True,
-        'proxy': selected_proxy,               # Proxy yahan apply ho gayi
-        'http_headers': {                      # Instagram ko lage ki ek normal mobile user browser chala raha hai
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'extract_flat': False, # Sirf link aur title nikalne ke liye
+        'skip_download': True, # Video download bilkul nahi karni
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # extract_info() se bina video download kiye saari details mil jaati hain
             info = ydl.extract_info(url, download=False)
             
-            # Direct MP4 stream URL nikalna
-            video_url = info.get('url') or info.get('entries')[0].get('url')
-            title = info.get('title', 'Social Media Video')
-            
+            if not info:
+                return jsonify({"success": False, "error": "Video data nahi mil paya!"}), 400
+
+            # Direct video stream URL structure check karna
+            video_url = None
+            if 'url' in info:
+                video_url = info['url']
+            elif 'formats' in info and len(info['formats']) > 0:
+                # Sabse best quality format ka link nikalna
+                video_url = info['formats'][-1].get('url')
+
+            title = info.get('title', 'NexStream_Video')
+
+            if not video_url:
+                return jsonify({"success": False, "error": "Direct MP4 link extract nahi ho saka!"}), 400
+
             return jsonify({
                 "success": True,
                 "title": title,
@@ -54,10 +57,13 @@ def extract_video():
             })
             
     except Exception as e:
-        # Agar koi proxy kharab ho ya block ho jaye, to error handle karne ke liye
+        # Asli error check karne ke liye string me convert kiya
+        error_msg = str(e)
+        print("Ytdl Error:", error_msg) # Vercel Logs me dikhega
+        
         return jsonify({
             "success": False, 
-            "error": "Server temporary busy hai, please ek baar phir try karein!"
+            "error": f"Cloud Engine Error: {error_msg[:50]}..." 
         }), 500
 
 if __name__ == '__main__':
